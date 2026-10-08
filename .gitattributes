@@ -1,0 +1,4 @@
+# Batch files break on LF line endings (goto and call :label fail), so
+# store them byte for byte, CRLF, rather than trusting a checkout to convert.
+*.bat -text
+*.cmd -text

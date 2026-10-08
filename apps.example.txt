@@ -1,0 +1,18 @@
+# Copy this file to apps.txt and list what your apps need. apps.txt stays
+# on your machine (it is in .gitignore), so it can name real hosts.
+# One target per line:  kind  value  [module]
+#
+#   host    a site an app calls, checked over HTTPS
+#   port    a port an app serves its page on, on 127.0.0.1
+#   wheel   a package with compiled code; the third column is the module
+#           to import when it differs from the package name
+#   python  the oldest Python version the apps accept
+#
+# github.com, pypi.org, files.pythonhosted.org and www.python.org are always
+# checked. Without any port line, 8000 is checked.
+
+host    example.com
+port    8000
+port    8080
+wheel   lxml    lxml.etree
+python  3.10
