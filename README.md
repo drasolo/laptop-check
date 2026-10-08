@@ -17,8 +17,8 @@ deleted at the end.
 
 1. Download the ZIP (Code, Download ZIP) and **extract it**. Running
    `run.bat` from inside the ZIP stops with a message saying so.
-2. Optional: copy `apps.example.txt` to `apps.txt` and list the hosts,
-   ports and packages your apps need (see below).
+2. Check `apps.txt`: it lists the hosts, ports and packages my apps need.
+   For other apps, edit it (see below).
 3. Double-click `run.bat`. It takes a few minutes.
 4. Read **Next steps** at the top of `results\report-<date>.md`. The report
    is also copied to the clipboard.
@@ -55,9 +55,8 @@ Below that, a table lists every check with its result.
 
 ## apps.txt
 
-`apps.txt` names what your apps need. It is in `.gitignore`, so it stays on
-your machine and can name real hosts. Change it and run again; no download
-needed. The format is in `apps.example.txt`:
+`apps.txt` names what the apps need. Change it on the machine and run
+again; no new download needed. The format is in `apps.example.txt`:
 
 ```
 host    example.com      a site an app calls
@@ -68,8 +67,8 @@ python  3.10             the oldest Python the apps accept
 
 ## Privacy
 
-- `results\` and `apps.txt` are in `.gitignore`, so they never get
-  committed by accident.
+- `results\` is in `.gitignore`, so reports never get committed by
+  accident.
 - The report replaces your user name, computer name and domain with
   `<user>`, `<pc>` and `<domain>`.
 - It still describes what the laptop allows. Read it before you share it,

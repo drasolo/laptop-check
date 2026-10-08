@@ -1,0 +1,12 @@
+# What my apps need: Python tools with a local page, plus scrapers. Format: apps.example.txt
+host    altex.ro
+host    www.emag.ro
+host    www.electrolux.ro
+host    api.search.brave.com
+port    8765
+port    8766
+port    8767
+port    8000
+wheel   lxml        lxml.etree
+wheel   curl_cffi   curl_cffi
+python  3.10

@@ -1,5 +1,4 @@
-# Copy this file to apps.txt and list what your apps need. apps.txt stays
-# on your machine (it is in .gitignore), so it can name real hosts.
+# The format of apps.txt. Edit apps.txt to match what your apps need.
 # One target per line:  kind  value  [module]
 #
 #   host    a site an app calls, checked over HTTPS
