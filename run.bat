@@ -270,26 +270,42 @@ set "EMB=%LOCALAPPDATA%\laptop-check-python-%RANDOM%"
 set "EMBOK="
 set "A=Python" & set "C=portable Python in your profile"
 curl.exe -sS -L --max-time 120 -o "%W%\embed.zip" "https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip" 2>"%W%\embed.err"
-if exist "%W%\embed.zip" (
-  mkdir "!EMB!" 2>nul
-  tar -xf "%W%\embed.zip" -C "!EMB!" 2>"%W%\embed.err"
-  "!EMB!\python.exe" -c "print('ok')" >"%W%\emb.txt" 2>&1
-  set "EOK=" & set /p EOK=<"%W%\emb.txt"
-  if "!EOK!"=="ok" (
-    set "S=PASS" & set "D=a Python bundled inside a project folder runs" & set "EMBOK=1"
-  ) else (
-    set "S=FAIL" & set "D=!EOK!" & set "K=I"
-    set "F=A Python copied into your profile does not run, so apps that bundle their own Python will not either. Ask IT."
-  )
+rem Each way this can fail says something different: a proxy that swaps the
+rem download for its own page, antivirus that deletes python.exe once it is
+rem unpacked, or a policy that stops it from running.
+set "SZ=0"
+if exist "%W%\embed.zip" for %%s in ("%W%\embed.zip") do set "SZ=%%~zs"
+set "EERR=" & set /p EERR=<"%W%\embed.err"
+if !SZ! lss 5000000 (
+  set "S=INFO" & set "D=the download came back as !SZ! bytes, not the 10 MB ZIP !EERR!: a proxy probably replaced it with its own page. Not tested"
+  set "K=W" & set "F=Downloading a portable Python is blocked, not necessarily running one. Copy a project that bundles its Python onto the laptop and start it to find out."
 ) else (
-  set "S=INFO" & set "D=could not download it from python.org, so not tested"
+  mkdir "!EMB!" 2>nul
+  tar -xf "%W%\embed.zip" -C "!EMB!" >"%W%\tar.txt" 2>&1
+  set "TERR=" & set /p TERR=<"%W%\tar.txt"
+  call :sleep 2
+  if not exist "!EMB!\python.exe" (
+    if defined TERR (set "D=could not unpack it: !TERR!") else (set "D=python.exe disappeared after unpacking: antivirus removed it")
+    set "S=FAIL" & set "K=I"
+    set "F=Antivirus removes a Python copied into your profile, so apps that bundle their own Python will not run. Ask IT."
+  ) else (
+    "!EMB!\python.exe" -c "print('ok')" >"%W%\emb.txt" 2>&1
+    set "EOK=" & set /p EOK=<"%W%\emb.txt"
+    if "!EOK!"=="ok" (
+      set "S=PASS" & set "D=a Python bundled inside a project folder runs" & set "EMBOK=1"
+    ) else (
+      if not defined EOK set "EOK=it started but printed nothing, so something stopped it silently"
+      set "S=FAIL" & set "D=!EOK!" & set "K=I"
+      set "F=A Python copied into your profile does not run, so apps that bundle their own Python will not either. Ask IT."
+    )
+  )
 )
 call :emit
 
 set "PYRUN=" & set "LC_EMBEDDED=0"
 if defined PY (set "PYRUN=!PY!") else if defined EMBOK (set "PYRUN=!EMB!\python.exe" & set "LC_EMBEDDED=1")
 if defined PYRUN (
-  set "LC_WORK=%W%" & set "LC_TIMEOUT=%T%" & set "LC_HOSTS=!HOSTS!" & set "LC_PORTS=!PORTS!"
+  set "LC_WORK=%W%" & set "LC_OUT=%OUT%" & set "LC_TIMEOUT=%T%" & set "LC_HOSTS=!HOSTS!" & set "LC_PORTS=!PORTS!"
   set "LC_WHEELS=!WHEELS!" & set "LC_MINPY=!MINPY!" & set "LC_DOCS=!DOCS!" & set "LC_BROWSERS=!BROWSERS!"
   echo  Python checks: pip, compiled modules, TLS, ports, browser automation...
   "!PYRUN!" "%ROOT%probe.py" >"%W%\probe.txt" 2>"%W%\probe.err"

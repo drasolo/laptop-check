@@ -184,12 +184,41 @@ def tls():
             except ssl.SSLError:
                 bundle_fails.append(host)
     if bundle_fails:
-        out('FAIL', 'TLS', 'apps with their own certificate list', 'certifi rejects ' + ', '.join(bundle_fails), 'S',
-            'Libraries that ship their own certificate list (requests, httpx, curl_cffi) will fail here. '
-            'Install truststore or pip-system-certs, or export the company root certificate as a .pem and '
-            'set SSL_CERT_FILE and REQUESTS_CA_BUNDLE to it.')
+        fixed = write_bundle(bundle, bundle_fails)
+        if fixed:
+            fix = (f'Libraries that ship their own certificate list (requests, httpx, curl_cffi) fail on inspected '
+                   f'sites. {fixed} holds that list plus the Windows root certificates, and works on these hosts. '
+                   f'Copy it next to your projects and set SSL_CERT_FILE, REQUESTS_CA_BUNDLE and CURL_CA_BUNDLE '
+                   f'to its path (setx SSL_CERT_FILE "path" keeps it for your user); for curl_cffi also pass verify="path".')
+        else:
+            fix = ('Libraries that ship their own certificate list (requests, httpx, curl_cffi) fail on inspected sites. '
+                   'Install truststore or pip-system-certs, or set SSL_CERT_FILE and REQUESTS_CA_BUNDLE to a .pem '
+                   'that also holds the company root certificate.')
+        out('FAIL', 'TLS', 'apps with their own certificate list', 'certifi rejects ' + ', '.join(bundle_fails), 'S', fix)
     elif bundle:
         out('PASS', 'TLS', 'apps with their own certificate list', 'certifi accepts every host it reached')
+
+
+def write_bundle(certifi_pem, hosts):
+    """certifi plus the Windows root store as one .pem, if that fixes `hosts`."""
+    if not hasattr(ssl, 'enum_certificates') or not os.environ.get('LC_OUT'):
+        return None
+    pems = [open(certifi_pem, encoding='ascii').read()]
+    for store in ('ROOT', 'CA'):
+        for der, enc, trust in ssl.enum_certificates(store):
+            if enc == 'x509_asn':
+                pems.append(ssl.DER_cert_to_PEM_cert(der))
+    path = os.path.join(os.environ['LC_OUT'], 'ca-bundle.pem')
+    with open(path, 'w', encoding='ascii') as f:
+        f.write('\n'.join(pems))
+    for host in hosts:
+        try:
+            with socket.create_connection((host, 443), timeout=T) as s, \
+                    ssl.create_default_context(cafile=path).wrap_socket(s, server_hostname=host):
+                pass
+        except (OSError, ssl.SSLError):
+            return None
+    return path
 
 
 def port_owner(port):
