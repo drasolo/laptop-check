@@ -175,6 +175,24 @@ if "!BOUT!"=="ok" (set "S=PASS" & set "D=batch files run from Documents") else (
 )
 call :emit
 
+rem An approval agent (BeyondTrust/Avecto, CyberArk EPM...) can judge a program
+rem by how it starts: run from cmd it passes, double-clicked in Explorer it
+rem asks for IT approval. So also start a windowed .exe the way a person does.
+tasklist /fo csv /nh >"%W%\tasks.txt" 2>nul
+set "EPM="
+for %%n in (DefendpointService PGSystemTray PGProtectedService Avecto BeyondTrust vf_agent CyberArk ThreatLocker AdminByRequest) do (
+  findstr /i /c:"%%n" "%W%\tasks.txt" >nul && set "EPM=!EPM!%%n "
+)
+if defined EPM (
+  set "A=Running code" & set "C=application approval agent" & set "S=INFO" & set "D=running: !EPM!"
+  call :emit
+)
+if defined HAVEEXE (
+  >"%W%\gui.cs" echo public static class G { public static void Main^(^) { System.IO.File.WriteAllText^(System.Reflection.Assembly.GetExecutingAssembly^(^).Location + ".ok", "ok"^); } }
+  "%CSC%" /nologo /target:winexe /out:"%W%\gui.exe" "%W%\gui.cs" >nul 2>&1
+  if exist "%W%\gui.exe" call :explorerexe
+)
+
 rem ================================================================ network
 set "A=Network" & set "C=proxy" & set "S=INFO"
 set "PX="
@@ -398,6 +416,33 @@ if "!EO!"=="ok" (set "S=PASS" & set "D=!DIR!") else (
 )
 call :emit
 del "%DEST%" 2>nul
+exit /b
+
+rem :explorerexe: the double-click case. The test program writes <itself>.ok.
+:explorerexe
+set "A=Running code" & set "C=double-click a windowed .exe (started from Explorer)"
+set "GDEST=%DOCS%\laptop-check-test-program.exe"
+copy /y "%W%\gui.exe" "%GDEST%" >nul 2>&1
+if not exist "%GDEST%" (
+  set "S=FAIL" & set "D=could not copy it to Documents"
+  call :emit
+  exit /b
+)
+del "%GDEST%.ok" 2>nul
+echo.
+echo  !ESC![33mIf a security window now asks for approval, press Cancel. That window is the finding.!ESC![0m
+echo.
+explorer.exe "%GDEST%"
+set /a "gw=0"
+:gw_loop
+if not exist "%GDEST%.ok" if !gw! lss 30 (set /a "gw+=1" & ping -n 2 127.0.0.1 >nul & goto gw_loop)
+if exist "%GDEST%.ok" (set "S=PASS" & set "D=starts from Explorer") else (
+  set "S=FAIL" & set "D=did not start within 30 s: an approval prompt or a policy stopped it" & set "K=W"
+  set "F=Unsigned programs started from Explorer need IT approval here. Start each app from a .bat or with python instead of its .exe, share it as an HTML file, or request approval for the .exe through the IT Service Portal."
+)
+call :emit
+call :sleep 1
+del "%GDEST%" "%GDEST%.ok" 2>nul
 exit /b
 
 rem :host name
