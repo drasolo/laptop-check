@@ -116,21 +116,25 @@ def wheels():
         module = module or dist
         check = f'load {dist} (compiled code)'
         dest = tempfile.mkdtemp(dir=WORK)
-        r = run([sys.executable, '-m', 'pip', 'download', '--only-binary', ':all:', '--no-deps',
+        # With its dependencies: curl_cffi, for one, needs cffi's compiled
+        # _cffi_backend, and without it the import fails for the wrong reason.
+        r = run([sys.executable, '-m', 'pip', 'download', '--only-binary', ':all:',
                  '--dest', dest, dist], timeout=300)
         found = glob.glob(os.path.join(dest, '*.whl'))
-        if r.returncode or not found:
+        main = [w for w in found if os.path.basename(w).lower().startswith(dist.lower().replace('-', '_'))]
+        if r.returncode or not main:
             kind, fix = pip_failure(r.stderr)
             out('FAIL', 'Python', check, 'download failed: ' + last_line(r.stderr), kind, fix)
             continue
         unpacked = os.path.join(dest, 'x')
-        with zipfile.ZipFile(found[0]) as z:
-            z.extractall(unpacked)
+        for whl in found:
+            with zipfile.ZipFile(whl) as z:
+                z.extractall(unpacked)
         # A fresh process, so the .pyd and .dll files load the way an app loads them.
         code = f'import sys; sys.path.insert(0, {unpacked!r}); import {module}; print("ok")'
         r = run([sys.executable, '-c', code])
         if 'ok' in r.stdout:
-            out('PASS', 'Python', check, f'{os.path.basename(found[0])} imports')
+            out('PASS', 'Python', check, f'{os.path.basename(main[0])} imports')
             continue
         err = last_line(r.stderr)
         policy = any(s in err for s in ('blocked', 'Device Guard', 'Application Control', '1260', '4551', 'policy'))
@@ -138,10 +142,12 @@ def wheels():
             out('FAIL', 'Python', check, err, 'I',
                 'Application control blocks compiled Python modules. Ask IT to allow .pyd/.dll files '
                 'loaded by python.exe from your Python and project folders.')
-        else:
+        elif 'DLL load failed' in err:
             out('FAIL', 'Python', check, err, 'S',
                 'A system library is missing. The Microsoft Visual C++ Redistributable usually fixes it '
                 '(it needs admin, so ask IT if you cannot install it).')
+        else:
+            out('WARN', 'Python', check, err, '-', '-')
 
 
 def certifi_bundle():
@@ -184,13 +190,14 @@ def tls():
             except ssl.SSLError:
                 bundle_fails.append(host)
     if bundle_fails:
-        fixed = write_bundle(bundle, bundle_fails)
+        fixed, why = write_bundle(bundle, bundle_fails)
         if fixed:
             fix = (f'Libraries that ship their own certificate list (requests, httpx, curl_cffi) fail on inspected '
                    f'sites. {fixed} holds that list plus the Windows root certificates, and works on these hosts. '
                    f'Copy it next to your projects and set SSL_CERT_FILE, REQUESTS_CA_BUNDLE and CURL_CA_BUNDLE '
                    f'to its path (setx SSL_CERT_FILE "path" keeps it for your user); for curl_cffi also pass verify="path".')
         else:
+            bundle_fails.append(f'(a combined bundle did not help: {why})')
             fix = ('Libraries that ship their own certificate list (requests, httpx, curl_cffi) fail on inspected sites. '
                    'Install truststore or pip-system-certs, or set SSL_CERT_FILE and REQUESTS_CA_BUNDLE to a .pem '
                    'that also holds the company root certificate.')
@@ -200,25 +207,41 @@ def tls():
 
 
 def write_bundle(certifi_pem, hosts):
-    """certifi plus the Windows root store as one .pem, if that fixes `hosts`."""
-    if not hasattr(ssl, 'enum_certificates') or not os.environ.get('LC_OUT'):
-        return None
-    pems = [open(certifi_pem, encoding='ascii').read()]
+    """certifi plus the Windows certificate stores as one .pem.
+
+    Returns (path, None) when the file works for every host in `hosts`, else
+    (None, why). Each Windows certificate is test-loaded on its own first:
+    one that OpenSSL cannot read would make the whole file fail to load.
+    """
+    if not hasattr(ssl, 'enum_certificates'):
+        return None, 'not on Windows'
+    if not os.environ.get('LC_OUT'):
+        return None, 'no output folder'
+    with open(certifi_pem, encoding='utf-8') as f:
+        pems = [f.read()]
+    seen, skipped = set(), 0
     for store in ('ROOT', 'CA'):
         for der, enc, trust in ssl.enum_certificates(store):
-            if enc == 'x509_asn':
-                pems.append(ssl.DER_cert_to_PEM_cert(der))
+            if enc != 'x509_asn' or der in seen:
+                continue
+            seen.add(der)
+            try:
+                ssl.create_default_context(cadata=der)
+            except (ssl.SSLError, ValueError):
+                skipped += 1
+                continue
+            pems.append(ssl.DER_cert_to_PEM_cert(der))
     path = os.path.join(os.environ['LC_OUT'], 'ca-bundle.pem')
-    with open(path, 'w', encoding='ascii') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(pems))
     for host in hosts:
         try:
             with socket.create_connection((host, 443), timeout=T) as s, \
                     ssl.create_default_context(cafile=path).wrap_socket(s, server_hostname=host):
                 pass
-        except (OSError, ssl.SSLError):
-            return None
-    return path
+        except (OSError, ssl.SSLError) as e:
+            return None, f'{host}: {e} ({len(seen)} Windows certificates, {skipped} unreadable)'
+    return path, None
 
 
 def port_owner(port):
